@@ -26,7 +26,7 @@ final class Progress {
         new Achievement("combo5", "Chuỗi 5", "Đúng liên tiếp 5 câu", p -> p.bestCombo >= 5),
         new Achievement("arena", "Đấu sĩ", "Thắng đấu trường 1 lần", p -> p.wins >= 1),
         new Achievement("perfect", "Hoàn hảo", "Thắng đấu trường không sai câu nào", p -> p.perfectWins >= 1),
-        new Achievement("talk", "Người giao tiếp", "Hoàn thành mọi hội thoại", p -> p.dialoguesDone.size() >= Data.DIALOGUES.size()),
+        new Achievement("talk", "Người giao tiếp", "Đáp đúng 30 hội thoại khác nhau", p -> p.dialoguesDone.size() >= 30),
         new Achievement("streak3", "Bền bỉ", "Học 3 ngày liên tiếp", p -> p.streakDays >= 3),
         new Achievement("lv5", "Cấp 5", "Đạt cấp độ 5", p -> p.level() >= 5),
         new Achievement("topik_win", "Thí sinh TOPIK", "Thắng đấu trường TOPIK bất kỳ", p -> p.topikWinsTotal() >= 1),
@@ -40,6 +40,8 @@ final class Progress {
     static final int[] QUEST_REWARD = {20, 30, 20, 40};
 
     int xp, answered, wrong, wins, perfectWins, bestCombo, streakDays;
+    /** When true, Vietnamese hints are hidden in dialogues / Hangul (hover to peek). Survives reset. */
+    boolean hideVi;
     final int[] topikWins = new int[8];   // index 1-6 = TOPIK level, 7 = mixed
     String lastDay = "", dayKey = "";
     int dayLearned, dayCorrect, dayDialogue, dayWins;
@@ -132,6 +134,7 @@ final class Progress {
         return true;
     }
     void unmarkLearned(String ko) { learned.remove(ko); save(); }
+    void setHideVi(boolean hide) { hideVi = hide; save(); }
 
     boolean seeJamo(String ch) {
         if (!jamoSeen.add(ch)) return false;
@@ -228,6 +231,7 @@ final class Progress {
         xp = num(p, "xp"); answered = num(p, "answered"); wrong = num(p, "wrong");
         wins = num(p, "wins"); perfectWins = num(p, "perfectWins"); bestCombo = num(p, "bestCombo");
         streakDays = num(p, "streakDays");
+        hideVi = "true".equals(p.getProperty("hideVi", "false").trim());
         String[] tw = p.getProperty("topikWins", "").split(",");
         for (int i = 0; i < tw.length && i < topikWins.length; i++) { try { topikWins[i] = Math.max(0, Integer.parseInt(tw[i].trim())); } catch (NumberFormatException ignored) { } }
         lastDay = p.getProperty("lastDay", ""); dayKey = p.getProperty("dayKey", "");
@@ -249,7 +253,7 @@ final class Progress {
         Properties p = new Properties();
         p.setProperty("xp", "" + xp); p.setProperty("answered", "" + answered); p.setProperty("wrong", "" + wrong);
         p.setProperty("wins", "" + wins); p.setProperty("perfectWins", "" + perfectWins);
-        p.setProperty("bestCombo", "" + bestCombo);
+        p.setProperty("bestCombo", "" + bestCombo); p.setProperty("hideVi", "" + hideVi);
         StringBuilder twSb = new StringBuilder();
         for (int i = 0; i < topikWins.length; i++) twSb.append(i == 0 ? "" : ",").append(topikWins[i]);
         p.setProperty("topikWins", twSb.toString()); p.setProperty("streakDays", "" + streakDays);

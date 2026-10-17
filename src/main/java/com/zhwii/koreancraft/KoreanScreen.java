@@ -25,14 +25,15 @@ final class KoreanScreen extends Screen {
     private static final int BLUE = 0xFF60A5FA, ORANGE = 0xFFFB923C, PURPLE = 0xFFC084FC;
     private static final int TEXT = 0xFFE8EEFC, DIM = 0xFF8FA0C0, DARK = 0xFF0B1220;
 
-    private static final String[] CARD_ICON = {"말", "ㄱ", "?", "복", "안", "전", "!", "%"};
-    private static final String[] CARD_NAME = {"Từ vựng", "Hangul", "Trắc nghiệm", "Ôn lỗi sai", "Hội thoại", "Đấu trường", "Nhiệm vụ", "Thống kê"};
-    private static final int[] CARD_COLOR = {GOLD, TEAL, BLUE, ROSE, PURPLE, ORANGE, GREEN, 0xFFA3B1D6};
-    private static final Page[] CARD_PAGE = {Page.FLASH, Page.HANGUL, Page.QUIZ, Page.REVIEW, Page.DIALOGUE, Page.ARENA, Page.QUESTS, Page.STATS};
+    // 0 = từ vựng Minecraft, 1 = từ vựng đời sống (hai mục riêng), 9 = nút bật/tắt ẩn tiếng Việt
+    private static final String[] CARD_ICON = {"돌", "집", "ㄱ", "?", "복", "안", "전", "!", "%", "VI"};
+    private static final String[] CARD_NAME = {"Minecraft", "Đời sống", "Hangul", "Trắc nghiệm", "Ôn lỗi sai", "Hội thoại", "Đấu trường", "Nhiệm vụ", "Thống kê", "Tiếng Việt"};
+    private static final int[] CARD_COLOR = {GREEN, GOLD, TEAL, BLUE, ROSE, PURPLE, ORANGE, 0xFFF472B6, 0xFFA3B1D6, 0xFF93C5FD};
+    private static final Page[] CARD_PAGE = {Page.FLASH, Page.FLASH, Page.HANGUL, Page.QUIZ, Page.REVIEW, Page.DIALOGUE, Page.ARENA, Page.QUESTS, Page.STATS, Page.HOME};
 
     private static final int[] WATCH = {
         GLFW.GLFW_KEY_1, GLFW.GLFW_KEY_2, GLFW.GLFW_KEY_3, GLFW.GLFW_KEY_4, GLFW.GLFW_KEY_5, GLFW.GLFW_KEY_6,
-        GLFW.GLFW_KEY_7, GLFW.GLFW_KEY_8, GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_UP,
+        GLFW.GLFW_KEY_7, GLFW.GLFW_KEY_8, GLFW.GLFW_KEY_9, GLFW.GLFW_KEY_0, GLFW.GLFW_KEY_M, GLFW.GLFW_KEY_LEFT, GLFW.GLFW_KEY_RIGHT, GLFW.GLFW_KEY_UP,
         GLFW.GLFW_KEY_DOWN, GLFW.GLFW_KEY_SPACE, GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER, GLFW.GLFW_KEY_BACKSPACE
     };
 
@@ -63,6 +64,8 @@ final class KoreanScreen extends Screen {
     private long resetArmedUntil;
 
     // flashcards
+    private int fSec;   // 0 = Minecraft, 1 = đời sống
+    private int qSrc, dSrc;   // nguồn câu hỏi / hội thoại: 0 = tất cả, 1 = Minecraft, 2 = đời sống
     private int fCat = -1, fPos; private boolean fFlip, fShuffle; private List<Integer> fList = new ArrayList<>();
     // hangul
     private int jSel;
@@ -95,6 +98,8 @@ final class KoreanScreen extends Screen {
         toast = msg.replaceAll("\u00a7.", "");
         toastUntil = System.currentTimeMillis() + 2600;
         toastColor = msg.contains("\u00a7c") ? ROSE : msg.contains("\u00a7a") ? GREEN : GOLD;
+        if (msg.contains("Lên cấp")) Sfx.levelUp();
+        else if (msg.contains("Thành tựu mới") || msg.contains("Nhiệm vụ hoàn thành")) Sfx.achievement();
     }
 
     @Override public void onClose() {
@@ -143,7 +148,7 @@ final class KoreanScreen extends Screen {
 
         if (click) for (int i = hits.size() - 1; i >= 0; i--) {
             Hit h = hits.get(i);
-            if (mx >= h.x && mx < h.x + h.w && my >= h.y && my < h.y + h.h) { h.action.run(); break; }
+            if (mx >= h.x && mx < h.x + h.w && my >= h.y && my < h.y + h.h) { Sfx.click(); h.action.run(); break; }
         }
     }
 
@@ -151,9 +156,10 @@ final class KoreanScreen extends Screen {
     private boolean enter() { return e(GLFW.GLFW_KEY_ENTER) || e(GLFW.GLFW_KEY_KP_ENTER) || e(GLFW.GLFW_KEY_SPACE); }
 
     private void handleKeys(long now) {
+        if (e(GLFW.GLFW_KEY_M)) { Sfx.enabled = !Sfx.enabled; showToast(Sfx.enabled ? "\u00a7aĐã bật âm thanh" : "\u00a7aĐã tắt âm thanh"); Sfx.click(); }
         if (page != Page.HOME && e(GLFW.GLFW_KEY_BACKSPACE)) { page = Page.HOME; return; }
         switch (page) {
-            case HOME -> { for (int i = 0; i < 8; i++) if (e(GLFW.GLFW_KEY_1 + i)) open(i); }
+            case HOME -> { for (int i = 0; i < 10; i++) if (e(i == 9 ? GLFW.GLFW_KEY_0 : GLFW.GLFW_KEY_1 + i)) open(i); }
             case FLASH -> {
                 if (e(GLFW.GLFW_KEY_LEFT)) flashMove(-1);
                 if (e(GLFW.GLFW_KEY_RIGHT)) flashMove(1);
@@ -194,6 +200,12 @@ final class KoreanScreen extends Screen {
     }
 
     private void open(int card) {
+        if (card == 9) {
+            p.setHideVi(!p.hideVi);
+            showToast(p.hideVi ? "\u00a7aĐã ẩn tiếng Việt · di chuột để xem nghĩa" : "\u00a7aĐã hiện tiếng Việt");
+            return;
+        }
+        if (card <= 1) { if (fSec != card) fCat = -1; fSec = card; }
         Page target = CARD_PAGE[card];
         switch (target) {
             case FLASH -> rebuildFlash();
@@ -277,13 +289,15 @@ final class KoreanScreen extends Screen {
         if (page != Page.HOME) {
             button(px + 8, py + 6, 54, 16, "< Menu", GOLD, true, () -> page = Page.HOME);
             String title = switch (page) {
-                case FLASH -> "Từ vựng"; case HANGUL -> "Bảng chữ Hangul";
+                case FLASH -> "Từ vựng " + Data.SEC_NAMES[fSec]; case HANGUL -> "Bảng chữ Hangul";
                 case QUIZ -> reviewMode ? "Ôn lỗi sai" : "Trắc nghiệm";
-                case REVIEW -> "Ôn lỗi sai"; case DIALOGUE -> "Hội thoại với dân làng";
+                case REVIEW -> "Ôn lỗi sai"; case DIALOGUE -> "Hội thoại";
                 case ARENA -> "Đấu trường"; case QUESTS -> "Nhiệm vụ & thành tựu"; default -> "Thống kê";
             };
             ctr(title, px + pw / 2, py + 9, GOLD);
             right("Lv " + p.level() + "  " + p.xp + " XP", px + pw - 10, py + 9, TEAL);
+            if (page == Page.DIALOGUE || page == Page.HANGUL)
+                button(px + 66, py + 6, 62, 16, p.hideVi ? "Việt: Ẩn" : "Việt: Hiện", TEAL, true, () -> p.setHideVi(!p.hideVi));
         }
     }
 
@@ -307,23 +321,23 @@ final class KoreanScreen extends Screen {
         chip(px + 14 + cw + 4, y, cw, "Hôm nay " + Math.min(10, p.dayCorrect) + "/10 câu", GREEN);
         chip(px + 14 + 2 * (cw + 4), y, cw, "Thuộc " + p.learned.size() + "/" + Data.WORDS.size() + " từ", TEAL);
 
-        int gap = 8, card = (pw - 28 - 3 * gap) / 4;
-        for (int i = 0; i < 8; i++) {
-            int x = px + 14 + (i % 4) * (card + gap);
-            int y0 = py + 98 + (i / 4) * 66;
+        int gap = 6, card = (pw - 28 - 4 * gap) / 5;
+        for (int i = 0; i < 10; i++) {
+            int x = px + 14 + (i % 5) * (card + gap);
+            int y0 = py + 98 + (i / 5) * 66;
             final int id = i;
             boolean hv = over(x, y0, card, 60);
             int yy = hv ? y0 - 1 : y0;
             int col = CARD_COLOR[i];
             box(x, yy, card, 60, hv ? mix(CARD, col, .18f) : CARD, hv ? col : CARD_BORDER);
             rect(x + 3, yy + 1, card - 6, 2, col);
-            txt("" + (i + 1), x + 5, yy + 6, DIM);
+            txt(i == 9 ? "0" : "" + (i + 1), x + 5, yy + 6, DIM);
             big(CARD_ICON[i], x + card / 2, yy + 8, 2f, col, card - 10);
             ctr(fit(CARD_NAME[i], card - 6), x + card / 2, yy + 32, TEXT);
             ctr(fit(cardDetail(i), card - 6), x + card / 2, yy + 44, DIM);
             hits.add(new Hit(x, y0, card, 60, () -> open(id)));
         }
-        ctr("Phím 1-8 chọn nhanh · Shift+K đóng · ESC quay lại", px + pw / 2, py + ph - 14, 0xFF6C7C9C);
+        ctr("Phím 1-9, 0 chọn · M tắt/bật âm thanh · ESC quay lại", px + pw / 2, py + ph - 14, 0xFF6C7C9C);
     }
     private void txtBig(String s, int x, int y, float sc, int c) {
         var m = gx.pose(); m.pushMatrix(); m.translate((float) x, (float) y); m.scale(sc, sc);
@@ -336,14 +350,16 @@ final class KoreanScreen extends Screen {
     }
     private String cardDetail(int i) {
         return switch (i) {
-            case 0 -> Data.WORDS.size() + " từ";
-            case 1 -> Data.JAMO.size() + " ký tự";
-            case 2 -> "Hàn <-> Việt";
-            case 3 -> p.weak().size() + " từ cần ôn";
-            case 4 -> Data.DIALOGUES.size() + " tình huống";
-            case 5 -> "TOPIK 1-6";
-            case 6 -> countClaimable() > 0 ? countClaimable() + " thưởng mới!" : "4 nhiệm vụ";
-            default -> p.accuracy() + "% chính xác";
+            case 0 -> Data.MC_WORDS.size() + " từ";
+            case 1 -> Data.LIFE_WORDS.size() + " từ";
+            case 2 -> Data.JAMO.size() + " ký tự";
+            case 3 -> "Hàn - Việt";
+            case 4 -> p.weak().size() + " từ yếu";
+            case 5 -> Data.DIALOGUES.size() + " câu";
+            case 6 -> "TOPIK 1-6";
+            case 7 -> countClaimable() > 0 ? countClaimable() + " thưởng!" : "4 nhiệm vụ";
+            case 8 -> p.accuracy() + "% đúng";
+            default -> p.hideVi ? "Đang ẩn" : "Đang hiện";
         };
     }
     private int countClaimable() {
@@ -355,20 +371,21 @@ final class KoreanScreen extends Screen {
     // ================================================================== FLASHCARDS
     private void rebuildFlash() {
         fList = new ArrayList<>();
-        for (int i = 0; i < Data.WORDS.size(); i++) if (fCat < 0 || Data.WORDS.get(i).cat() == fCat) fList.add(i);
+        List<Data.Word> src = Data.wordsOf(fSec);
+        for (int i = 0; i < src.size(); i++) if (fCat < 0 || src.get(i).cat() == fCat) fList.add(i);
         if (fShuffle) Collections.shuffle(fList, rnd);
         fPos = 0; fFlip = false;
     }
     private void flashMove(int d) { if (fList.isEmpty()) return; fPos = (fPos + d + fList.size()) % fList.size(); fFlip = false; }
     private void flashMark(boolean known) {
         if (fList.isEmpty()) return;
-        Data.Word w = Data.WORDS.get(fList.get(fPos));
-        if (known) { if (p.markLearned(w.ko())) showToast("\u00a7a+3 XP · đã thuộc " + w.ko()); }
+        Data.Word w = Data.wordsOf(fSec).get(fList.get(fPos));
+        if (known) { if (p.markLearned(w.ko())) { Sfx.orb(); showToast("\u00a7a+3 XP · đã thuộc " + w.ko()); } }
         else p.unmarkLearned(w.ko());
         flashMove(1);
     }
     private void cycleCat(int d) {
-        int n = Data.CATS.length + 1;
+        int n = Data.catsOf(fSec).length + 1;
         fCat = ((fCat + 1 + d + n) % n) - 1;
         rebuildFlash();
     }
@@ -376,21 +393,21 @@ final class KoreanScreen extends Screen {
     private void drawFlash() {
         int y = cy0(), x = px + 14, w = pw - 28;
         button(x, y, 18, 16, "<", GOLD, true, () -> cycleCat(-1));
-        String cat = fCat < 0 ? "Tất cả" : Data.CATS[fCat];
+        String cat = fCat < 0 ? "Tất cả" : Data.shortOf(fSec)[fCat];
         box(x + 22, y, 170, 16, 0xFF131E36, 0xFF2A3A5E);
-        ctr("Chủ đề: " + cat + " (" + fList.size() + ")", x + 22 + 85, y + 4, TEXT);
+        ctr(fit("Chủ đề: " + cat + " (" + fList.size() + ")", 164), x + 22 + 85, y + 4, TEXT);
         button(x + 196, y, 18, 16, ">", GOLD, true, () -> cycleCat(1));
         button(x + w - 96, y, 96, 16, "Xáo trộn: " + (fShuffle ? "Bật" : "Tắt"), TEAL, true, () -> { fShuffle = !fShuffle; rebuildFlash(); });
 
         int cardY = y + 22, cardH = 116;
         if (fList.isEmpty()) { ctr("Không có từ nào.", px + pw / 2, cardY + 50, DIM); return; }
-        Data.Word wd = Data.WORDS.get(fList.get(fPos));
-        int col = Data.CAT_COLORS[wd.cat()];
+        Data.Word wd = Data.wordsOf(fSec).get(fList.get(fPos));
+        int col = Data.catColor(wd.cat());
         boolean hv = over(x, cardY, w, cardH);
         box(x, cardY, w, cardH, hv ? mix(CARD, col, .10f) : CARD, hv ? col : CARD_BORDER);
         rect(x + 4, cardY + 1, w - 8, 2, col);
         hits.add(new Hit(x, cardY, w, cardH, () -> fFlip = !fFlip));
-        txt(Data.CATS_SHORT[wd.cat()], x + 8, cardY + 8, col);
+        txt(Data.shortOf(fSec)[wd.cat()], x + 8, cardY + 8, col);
         if (p.learned.contains(wd.ko())) right("Đã thuộc", x + w - 8, cardY + 8, GREEN);
         int cx = x + w / 2;
         if (!fFlip) {
@@ -410,7 +427,7 @@ final class KoreanScreen extends Screen {
         button(x + w - 70, by, 70, 20, "Sau >", GOLD, true, () -> flashMove(1));
 
         int learnedHere = 0;
-        for (int i : fList) if (p.learned.contains(Data.WORDS.get(i).ko())) learnedHere++;
+        for (int i : fList) if (p.learned.contains(Data.wordsOf(fSec).get(i).ko())) learnedHere++;
         txt("Thẻ " + (fPos + 1) + "/" + fList.size() + " · Đã thuộc " + learnedHere + "/" + fList.size(), x, by + 27, DIM);
         bar(x, by + 38, w, 5, fList.isEmpty() ? 0 : learnedHere / (float) fList.size(), TEAL);
     }
@@ -418,6 +435,7 @@ final class KoreanScreen extends Screen {
     // ================================================================== HANGUL
     private void selectJamo(int i) {
         jSel = i;
+        Sfx.play("NOTE_BLOCK_PLING", 0.7f + (i % 12) * 0.06f);
         if (p.seeJamo(Data.JAMO.get(i).ch())) showToast("\u00a7a+1 XP · " + p.jamoSeen.size() + "/" + Data.JAMO.size() + " ký tự");
     }
     private void drawHangul() {
@@ -447,7 +465,7 @@ final class KoreanScreen extends Screen {
         txt(fit(j.sound(), dw - 84 - 100 - 8), tx + tw("Cách đọc gần đúng: "), dy + 24, GOLD);
         txt("Ví dụ:", tx, dy + 40, DIM);
         txt(j.exKo() + "  [" + j.exRoman() + "]", tx + 40, dy + 40, TEXT);
-        txt("Nghĩa: " + j.exVi(), tx, dy + 54, TEAL);
+        txt("Nghĩa: " + (!p.hideVi || over(dx, dy, dw, dh) ? j.exVi() : "••• (di chuột vào khung để xem)"), tx, dy + 54, TEAL);
         txt("Đã xem " + p.jamoSeen.size() + "/" + Data.JAMO.size() + " · dùng phím mũi tên để duyệt", tx, dy + 70, 0xFF6C7C9C);
     }
 
@@ -459,6 +477,7 @@ final class KoreanScreen extends Screen {
         for (Data.Word w : pool) { r -= p.weight(w); if (r < 0) return w; }
         return pool.get(0);
     }
+    private static boolean sameGroup(Data.Word a, Data.Word b) { return a.sec() == b.sec() && a.cat() == b.cat(); }
     private Question makeQuestion(List<Data.Word> pool, List<Data.Word> distractors, int mode) {
         Question q = new Question();
         q.word = pickWord(pool);
@@ -468,7 +487,7 @@ final class KoreanScreen extends Screen {
         List<Data.Word> others = new ArrayList<>(distractors);
         Collections.shuffle(others, rnd);
         // prefer distractors from the same category so the quiz is not trivial
-        others.sort((a, b) -> Boolean.compare(b.cat() == q.word.cat(), a.cat() == q.word.cat()));
+        others.sort((a, b) -> Boolean.compare(sameGroup(b, q.word), sameGroup(a, q.word)));
         List<Data.Word> head = new ArrayList<>(others.subList(0, Math.min(6, others.size())));
         List<Data.Word> tail = new ArrayList<>(others.subList(Math.min(6, others.size()), others.size()));
         Collections.shuffle(head, rnd); head.addAll(tail);
@@ -483,18 +502,19 @@ final class KoreanScreen extends Screen {
         return q;
     }
     private void nextQuiz() {
-        List<Data.Word> pool = Data.WORDS;
+        List<Data.Word> pool = Data.pool(qSrc);
         if (reviewMode) {
             pool = p.weak();
             if (pool.isEmpty()) { page = Page.REVIEW; showToast("\u00a7aĐã ôn xong mọi từ yếu!"); quiz = null; return; }
         }
-        quiz = makeQuestion(pool, reviewMode ? Data.ALL : Data.WORDS, qMode);
+        quiz = makeQuestion(pool, reviewMode ? Data.ALL : Data.pool(qSrc), qMode);
     }
     private void answerQuiz(int i) {
         if (quiz == null || quiz.picked >= 0) return;
         quiz.picked = i;
         boolean ok = i == quiz.correct;
         p.recordAnswer(quiz.word.ko(), ok);
+        Sfx.answer(ok, qCombo + 1);
         qTotal++;
         if (ok) {
             qRight++; qCombo++; p.noteCombo(qCombo);
@@ -533,7 +553,8 @@ final class KoreanScreen extends Screen {
         int y = cy0(), x = px + 14, w = pw - 28;
         String[] modes = {"Hàn -> Việt", "Việt -> Hàn", "Trộn"};
         button(x, y, 116, 16, "Hướng: " + modes[qMode], GOLD, true, () -> { qMode = (qMode + 1) % 3; if (quiz != null && quiz.picked < 0) nextQuiz(); });
-        right("Đúng " + qRight + "/" + qTotal + " · Chuỗi x" + qCombo, x + w, y + 4, qCombo >= 3 ? ORANGE : DIM);
+        button(x + 120, y, 104, 16, "Nguồn: " + Data.srcName(qSrc), TEAL, !reviewMode, () -> { qSrc = (qSrc + 1) % 3; nextQuiz(); });
+        right("Đúng " + qRight + "/" + qTotal + " · x" + qCombo, x + w, y + 4, qCombo >= 3 ? ORANGE : DIM);
         if (quiz == null) { nextQuiz(); if (quiz == null) return; }
         drawQuestionCard(quiz, y + 22, quiz.picked >= 0);
         drawOptions(quiz, y + 22 + 62 + 8, false, this::answerQuiz);
@@ -562,7 +583,7 @@ final class KoreanScreen extends Screen {
             big("잘했어요!", x + w / 2, y + 28, 3f, GREEN, w - 20);
             ctr("Chưa có từ nào cần ôn.", x + w / 2, y + 66, TEXT);
             ctr("Làm Trắc nghiệm hoặc Đấu trường để hệ thống ghi nhận từ bạn hay nhầm.", x + w / 2, y + 80, DIM);
-            button(x + w / 2 - 70, y + 130, 140, 20, "Đến Trắc nghiệm", BLUE, true, () -> open(2));
+            button(x + w / 2 - 70, y + 130, 140, 20, "Đến Trắc nghiệm", BLUE, true, () -> open(3));
             return;
         }
         txt("Từ bạn hay nhầm nhất (" + weak.size() + "):", x, y + 2, GOLD);
@@ -582,9 +603,9 @@ final class KoreanScreen extends Screen {
 
     // ================================================================== DIALOGUE
     private void startDialogue() {
-        dOrder = new ArrayList<>();
-        for (int i = 0; i < Data.DIALOGUES.size(); i++) dOrder.add(i);
+        dOrder = new ArrayList<>(Data.dialogueIds(dSrc));
         Collections.shuffle(dOrder, rnd);
+        if (dOrder.size() > 10) dOrder = new ArrayList<>(dOrder.subList(0, 10));   // mỗi lượt tối đa 10 tình huống
         dPos = 0; dRight = 0; dDone = false;
         buildDialogue();
     }
@@ -602,13 +623,13 @@ final class KoreanScreen extends Screen {
         if (dDone || dPicked >= 0) return;
         dPicked = i;
         if ("1".equals(dOpts[i][2])) {
-            dRight++;
+            dRight++; Sfx.yes();
             int pts = p.dialogueCorrect(dOrder.get(dPos));
             showToast("\u00a7a+" + pts + " XP");
-        } else showToast("\u00a7cChưa phù hợp");
+        } else { Sfx.no(); showToast("\u00a7cChưa phù hợp"); }
     }
     private void nextDialogue() {
-        if (dPos + 1 >= dOrder.size()) { dDone = true; p.gain(dRight == dOrder.size() ? 15 : 0); return; }
+        if (dPos + 1 >= dOrder.size()) { dDone = true; p.gain(dRight == dOrder.size() ? 15 : 0); if (dRight == dOrder.size()) Sfx.levelUp(); return; }
         dPos++; buildDialogue();
     }
     private void villager(int x, int y) {
@@ -623,6 +644,7 @@ final class KoreanScreen extends Screen {
     private void drawDialogue() {
         int y = cy0(), x = px + 14, w = pw - 28;
         if (dOrder.isEmpty()) startDialogue();
+        button(x, py + ph - 32, 130, 14, "Chủ đề: " + Data.srcName(dSrc), TEAL, true, () -> { dSrc = (dSrc + 1) % 3; startDialogue(); });
         if (dDone) {
             box(x, y + 8, w, 120, CARD, CARD_BORDER);
             big("완료!", x + w / 2, y + 22, 3f, GOLD, w - 20);
@@ -638,11 +660,11 @@ final class KoreanScreen extends Screen {
         box(bx, y + 2, bw, 54, CARD, GOLD);
         rect(bx - 3, y + 16, 4, 6, GOLD);
         big(d.npc(), bx + bw / 2, y + 10, 2f, TEXT, bw - 20);
-        ctr(d.npcVi(), bx + bw / 2, y + 38, DIM);
+        ctr(!p.hideVi || over(bx, y + 2, bw, 54) ? d.npcVi() : "••• di chuột vào đây để xem nghĩa", bx + bw / 2, y + 38, DIM);
         String fb = "Chọn câu trả lời phù hợp (1-3):"; int fc = 0xFF6C7C9C;
         if (dPicked >= 0) {
             boolean ok = "1".equals(dOpts[dPicked][2]);
-            fb = ok ? "잘했어요! Giỏi lắm!" : "다시 해 봐요. Chưa phù hợp, thử đáp án xanh nhé.";
+            fb = p.hideVi ? (ok ? "잘했어요!" : "다시 해 봐요.") : ok ? "잘했어요! Giỏi lắm!" : "다시 해 봐요. Chưa phù hợp, thử đáp án xanh nhé.";
             fc = ok ? GREEN : ROSE;
         }
         txt(fb, x, y + 62, fc);
@@ -657,7 +679,7 @@ final class KoreanScreen extends Screen {
             box(x + 5, by + 8, 14, 14, 0xFF0F1A30, border);
             ctr("" + (i + 1), x + 12, by + 11, border == CARD_BORDER ? DIM : border);
             txt(fit(dOpts[i][0], w - 36), x + 26, by + 5, TEXT);
-            txt(fit(dOpts[i][1], w - 36), x + 26, by + 17, DIM);
+            txt(fit(!p.hideVi || over(x, by, w, 30) ? dOpts[i][1] : "•••", w - 36), x + 26, by + 17, DIM);
             if (!answered) { final int id = i; hits.add(new Hit(x, by, w, 30, () -> answerDialogue(id))); }
         }
         for (int i = 0; i < dOrder.size(); i++)
@@ -682,6 +704,7 @@ final class KoreanScreen extends Screen {
         arena.picked = i;
         boolean ok = i == arena.correct;
         p.recordAnswer(arena.word.ko(), ok);
+        Sfx.answer(ok, aCombo + 1);
         if (ok) {
             aRight++; aCombo++; p.noteCombo(aCombo);
             int left = (int) Math.max(0, (secs() * 1000L - (now - aStart)) / 1000);
@@ -695,6 +718,7 @@ final class KoreanScreen extends Screen {
         if (aState == ArenaState.PLAY && arena != null && now - aStart >= secs() * 1000L) {
             arena.picked = -2; aCombo = 0; aMistakes++; aHearts--;
             p.recordAnswer(arena.word.ko(), false);
+            Sfx.no();
             aState = ArenaState.FEEDBACK; aFeedbackUntil = now + 1500;
         } else if (aState == ArenaState.FEEDBACK && now >= aFeedbackUntil) advanceArena(now);
     }
@@ -705,6 +729,7 @@ final class KoreanScreen extends Screen {
             boolean perfect = aWon && aMistakes == 0;
             p.arenaFinished(aWon, perfect, aLevel);
             aState = ArenaState.END;
+            if (aWon) Sfx.levelUp(); else Sfx.no();
         } else newArenaQuestion(now);
     }
 
@@ -807,18 +832,24 @@ final class KoreanScreen extends Screen {
             ctr(fit(tiles[i][0], tileW - 6), bx + tileW / 2, by + 9, tc[i]);
             ctr(fit(tiles[i][1], tileW - 4), bx + tileW / 2, by + 21, DIM);
         }
-        int cy = y + 82;
-        txt("Mức thành thạo theo chủ đề", x, cy, GOLD);
-        for (int c = 0; c < Data.CATS.length; c++) {
-            int total = 0, known = 0;
-            for (Data.Word wd : Data.WORDS) if (wd.cat() == c) { total++; if (p.learned.contains(wd.ko())) known++; }
-            int ry = cy + 13 + c * 14;
-            txt(Data.CATS_SHORT[c], x, ry, TEXT);
-            bar(x + 80, ry + 1, w - 80 - 44, 7, total == 0 ? 0 : known / (float) total, Data.CAT_COLORS[c]);
-            right(known + "/" + total, x + w, ry, DIM);
+        int cy = y + 82, colW = (w - 10) / 2;
+        for (int sec = 0; sec < 2; sec++) {
+            int cx = x + sec * (colW + 10), known = 0;
+            List<Data.Word> list = Data.wordsOf(sec);
+            for (Data.Word wd : list) if (p.learned.contains(wd.ko())) known++;
+            txt(Data.SEC_NAMES[sec] + " " + known + "/" + list.size(), cx, cy, sec == 0 ? GREEN : GOLD);
+            String[] names = Data.shortOf(sec);
+            for (int c = 0; c < names.length; c++) {
+                int tot = 0, kn = 0;
+                for (Data.Word wd : list) if (wd.cat() == c) { tot++; if (p.learned.contains(wd.ko())) kn++; }
+                int ry = cy + 12 + c * 11;
+                txt(fit(names[c], 68), cx, ry, TEXT);
+                bar(cx + 72, ry + 1, colW - 72 - 34, 6, tot == 0 ? 0 : kn / (float) tot, Data.catColor(c));
+                right(kn + "/" + tot, cx + colW, ry, DIM);
+            }
         }
         boolean armed = now < resetArmedUntil;
-        button(x + w - 130, py + ph - 24, 130, 16, armed ? "Bấm lại để xác nhận!" : "Đặt lại tiến độ", ROSE, true, () -> {
+        button(x, py + ph - 24, 130, 16, armed ? "Bấm lại để xác nhận!" : "Đặt lại tiến độ", ROSE, true, () -> {
             if (System.currentTimeMillis() < resetArmedUntil) { p.reset(); resetArmedUntil = 0; showToast("\u00a7cĐã đặt lại tiến độ"); }
             else resetArmedUntil = System.currentTimeMillis() + 3000;
         });
